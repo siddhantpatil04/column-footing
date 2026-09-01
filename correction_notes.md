@@ -1,0 +1,22 @@
+# COLUMN FOOTING — Approved Reconciliation Notes
+
+- **QD-001 — IGNORE:** retain separate X/Y bearing pressure checks; no combined biaxial corner-pressure check.
+- **QD-002 — CORRECT:** working minimum pressures are live formulas.
+- **QD-003 — RELABEL:** “required total depth” is “required effective depth”; numerical formula retained.
+- **QD-004 — CORRECT:** X/Y minimum steel references corrected.
+- **QD-005 — CORRECT:** one-way shear pressure references corrected by direction.
+- **QD-006 — IGNORE:** development length retained as information-only; not a mandatory overall-status check.
+- **QD-007 — CORRECT:** bond stress linked to concrete grade and deformed/plain bar status.
+- **QD-008 — VERIFIED/CORRECT:** bearing enhancement sqrt(A1/A2) capped at 2.0.
+- **QD-009 — CORRECT:** E236 equivalent no longer applies a second ×1.5.
+- **QD-010 — IGNORE:** footing self-weight remains 10% of design load.
+- **QD-011 — CORRECT:** add separate no-tension/eccentricity checks.
+- **QD-012 — CORRECT:** Ru.max derived from fck/fy.
+- **QD-013 — SELECTABLE:** user can switch between Existing Excel method `0.85bd/fy` and IS 456 footing/solid-slab minimum reinforcement.
+- **QD-014 — CORRECT:** explicit Ast-provided and spacing checks.
+- **QD-015 — CORRECT:** actual c/c spacing based on bar-centre positions.
+- **QD-016 — CORRECT:** Bf linked by equal projections for rectangular columns.
+- **QD-017 — CORRECT:** irrelevant legacy external/broken defined names excluded.
+- **QD-018 — CORRECT:** punching shear demand uses total design load minus reaction within critical perimeter.
+- **QD-019 — IGNORE:** pressure at column face retains workbook maximum-edge-pressure treatment.
+- **QD-020 — CORRECT:** blank pt.min removed as a user input.

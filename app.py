@@ -612,10 +612,11 @@ if result:
                 )
                 st.rerun()
     with tabs[4]:
+        st.caption("PDF report format: C.V.Patil & Associates compact A4 engineering calculation style.")
         pdf=build_pdf(project,inp,result)
         xlsx=build_excel(project,inp,result)
         c1,c2=st.columns(2)
-        c1.download_button("Download PDF Report",pdf,file_name="COLUMN_FOOTING_Design_Report.pdf",mime="application/pdf",use_container_width=True,type="primary")
+        c1.download_button("Download PDF Report",pdf,file_name="COLUMN_FOOTING_DESIGN_CALCULATION.pdf",mime="application/pdf",use_container_width=True,type="primary")
         c2.download_button("Download Excel Report",xlsx,file_name="COLUMN_FOOTING_Design_Report.xlsx",mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",use_container_width=True,type="primary")
 else:
     st.markdown(

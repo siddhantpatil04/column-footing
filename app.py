@@ -55,21 +55,21 @@ def build_pdf(project: ProjectInfo, inp: DesignInputs, result) -> bytes:
     styles = getSampleStyleSheet()
     title = ParagraphStyle(
         "CVPTitle", parent=styles["Heading1"], fontName="Helvetica-Bold",
-        fontSize=12.5, leading=14, textColor=RED, alignment=TA_CENTER,
+        fontSize=14.0, leading=15.5, textColor=RED, alignment=TA_CENTER,
         spaceBefore=0, spaceAfter=2.0 * mm,
     )
     sec = ParagraphStyle(
         "CVPSec", parent=styles["Heading2"], fontName="Helvetica-Bold",
-        fontSize=9.7, leading=10.6, textColor=RED,
+        fontSize=10.6, leading=11.8, textColor=RED,
         spaceBefore=1.6 * mm, spaceAfter=0.8 * mm,
     )
     body = ParagraphStyle(
         "CVPBody", parent=styles["BodyText"], fontName="Helvetica",
-        fontSize=6.45, leading=7.35, textColor=TEXT, spaceAfter=0,
+        fontSize=7.8, leading=8.95, textColor=TEXT, spaceAfter=0,
     )
     body_b = ParagraphStyle("CVPBodyB", parent=body, fontName="Helvetica-Bold")
     note = ParagraphStyle(
-        "CVPNote", parent=body, fontSize=5.8, leading=6.6,
+        "CVPNote", parent=body, fontSize=7.0, leading=8.0,
         textColor=MUTED, spaceBefore=0.4 * mm, spaceAfter=0.4 * mm,
     )
     safe = ParagraphStyle("CVPSafe", parent=body_b, textColor=GREEN, alignment=TA_CENTER)
@@ -89,7 +89,7 @@ def build_pdf(project: ProjectInfo, inp: DesignInputs, result) -> bytes:
         s = str(status).upper()
         return Paragraph(s, safe if s in {"SAFE", "PASS"} else fail)
 
-    def basic_table(data, widths, header=True, header_fill=LIGHT_BLUE, align=None, font_size=6.3):
+    def basic_table(data, widths, header=True, header_fill=LIGHT_BLUE, align=None, font_size=7.4):
         t = Table(data, colWidths=widths, repeatRows=1 if header else 0, hAlign="LEFT")
         cmds = [
             ("GRID", (0, 0), (-1, -1), 0.32, GRID),
@@ -99,8 +99,8 @@ def build_pdf(project: ProjectInfo, inp: DesignInputs, result) -> bytes:
             ("TEXTCOLOR", (0, 0), (-1, -1), TEXT),
             ("LEFTPADDING", (0, 0), (-1, -1), 2.0),
             ("RIGHTPADDING", (0, 0), (-1, -1), 2.0),
-            ("TOPPADDING", (0, 0), (-1, -1), 1.2),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 1.2),
+            ("TOPPADDING", (0, 0), (-1, -1), 2.0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 2.0),
         ]
         if header:
             cmds += [
@@ -133,7 +133,7 @@ def build_pdf(project: ProjectInfo, inp: DesignInputs, result) -> bytes:
         w, h = A4
         y = h - 7.0 * mm
         canvas.setFillColor(BLUE)
-        canvas.setFont("Helvetica-Bold", 7.5)
+        canvas.setFont("Helvetica-Bold", 8.2)
         canvas.drawString(9 * mm, y, "C.V.Patil & Associates")
         canvas.drawRightString(w - 9 * mm, y, "Design of COLUMN FOOTING")
         canvas.setStrokeColor(BLUE)
@@ -142,11 +142,11 @@ def build_pdf(project: ProjectInfo, inp: DesignInputs, result) -> bytes:
 
         fy = 8.0 * mm
         canvas.line(9 * mm, fy + 4.0 * mm, w - 9 * mm, fy + 4.0 * mm)
-        canvas.setFont("Helvetica", 5.6)
+        canvas.setFont("Helvetica", 6.4)
         canvas.setFillColor(BLUE)
         canvas.drawString(9 * mm, fy + 1.1 * mm, f"Project: {project.project or '-'}")
         canvas.drawString(9 * mm, fy - 1.2 * mm, f"Client: {project.client or '-'}")
-        canvas.setFont("Helvetica-Bold", 6.2)
+        canvas.setFont("Helvetica-Bold", 7.0)
         canvas.drawRightString(w - 9 * mm, fy - 0.4 * mm, str(doc_.page))
         canvas.restoreState()
 
@@ -225,8 +225,6 @@ def build_pdf(project: ProjectInfo, inp: DesignInputs, result) -> bytes:
     story.append(basic_table(reinf, [19*mm, 28*mm, 28*mm, 29*mm, 29*mm, 35*mm, 21*mm], header=True, align={0:"CENTER",6:"CENTER"}))
     story.append(P("Ast values in mm<super>2</super>. Minimum reinforcement method shown in Design Data.", note))
 
-    # Match the reference report's deliberate two-page composition.
-    story.append(PageBreak())
 
     # 6. One-way shear
     story.append(Paragraph("6. ONE-WAY SHEAR", sec))
@@ -255,6 +253,10 @@ def build_pdf(project: ProjectInfo, inp: DesignInputs, result) -> bytes:
     right.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,0),LIGHT_BLUE),("FONTNAME",(0,0),(-1,0),"Helvetica-Bold")]))
     story.append(Table([[left, right]], colWidths=[94*mm, 94*mm], hAlign="LEFT", style=[("VALIGN",(0,0),(-1,-1),"TOP"),("LEFTPADDING",(0,0),(-1,-1),0),("RIGHTPADDING",(0,0),(-1,-1),2)]))
 
+    # Deliberate page split: page 1 contains inputs and primary design calculations;
+    # page 2 contains the consolidated checks, traceability and final summary.
+    story.append(PageBreak())
+
     # 8. Mandatory checks - compact, same light table styling rather than old dark header style.
     story.append(Paragraph("8. MANDATORY DESIGN CHECKS", sec))
     checks = [[P("Check", body_b), P("Demand", body_b), P("Capacity / limit", body_b), P("Status", body_b)]]
@@ -263,10 +265,54 @@ def build_pdf(project: ProjectInfo, inp: DesignInputs, result) -> bytes:
         cap = "-" if c.capacity is None else fmt(c.capacity)
         unit = c.unit or ""
         checks.append([P(c.name), P(f"{d} {unit}"), P(f"{cap} {unit}"), S(c.status)])
-    story.append(basic_table(checks, [78*mm, 43*mm, 43*mm, 25*mm], header=True, align={3:"CENTER"}, font_size=5.95))
+    story.append(basic_table(checks, [78*mm, 43*mm, 43*mm, 25*mm], header=True, align={3:"CENTER"}, font_size=6.95))
 
-    # 9. Final summary - dark blue band exactly like the reference.
-    story.append(Paragraph("9. FINAL DESIGN SUMMARY", sec))
+    # 9. Key calculation trace - important equations/substitutions without reproducing every internal step.
+    story.append(Paragraph("9. KEY CALCULATION TRACE", sec))
+    trace_by_name = {t.name: t for t in result.trace}
+    trace_names = [
+        "Ru,max",
+        "Required effective depth X",
+        "Required effective depth Y",
+        "Punching shear demand",
+        "Minimum steel X",
+        "Minimum steel Y",
+        "Column bearing demand",
+        "Column bearing capacity",
+    ]
+    trace_rows = [[P("Calculation", body_b), P("Formula / substitution", body_b), P("Result", body_b), P("Excel source", body_b)]]
+    for name in trace_names:
+        t = trace_by_name.get(name)
+        if t is None:
+            continue
+        formula_text = t.formula
+        if getattr(t, "substitution", ""):
+            formula_text += "<br/>" + t.substitution
+        trace_rows.append([P(t.name), P(formula_text), P(f"{fmt(t.result)} {t.unit}", body_b), P(t.excel_source)])
+    story.append(basic_table(trace_rows, [47*mm, 76*mm, 37*mm, 29*mm], header=True, font_size=7.05))
+
+    # 10. Assumptions / reconciliation notes - retained engineering context, compactly presented.
+    story.append(Paragraph("10. ASSUMPTIONS / RECONCILIATION NOTES", sec))
+    assumption_rows = []
+    for i in range(0, len(result.assumptions), 2):
+        left_note = result.assumptions[i]
+        right_note = result.assumptions[i + 1] if i + 1 < len(result.assumptions) else ""
+        assumption_rows.append([P("• " + left_note, note), P("• " + right_note, note) if right_note else P("")])
+    if assumption_rows:
+        at = Table(assumption_rows, colWidths=[94.5*mm, 94.5*mm], hAlign="LEFT")
+        at.setStyle(TableStyle([
+            ("GRID", (0,0), (-1,-1), 0.3, GRID),
+            ("BACKGROUND", (0,0), (-1,-1), LIGHTER),
+            ("VALIGN", (0,0), (-1,-1), "TOP"),
+            ("LEFTPADDING", (0,0), (-1,-1), 3.0),
+            ("RIGHTPADDING", (0,0), (-1,-1), 3.0),
+            ("TOPPADDING", (0,0), (-1,-1), 2.3),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 2.3),
+        ]))
+        story.append(at)
+
+    # 11. Final summary - dark blue band exactly like the reference.
+    story.append(Paragraph("11. FINAL DESIGN SUMMARY", sec))
     summary = [
         [P("FINAL DESIGN SUMMARY", ParagraphStyle("sumh", parent=body_b, textColor=colors.white)), ""],
         [P("Overall Status", body_b), S(result.overall_status)],
@@ -287,8 +333,8 @@ def build_pdf(project: ProjectInfo, inp: DesignInputs, result) -> bytes:
         ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
         ("LEFTPADDING", (0,0), (-1,-1), 2.5),
         ("RIGHTPADDING", (0,0), (-1,-1), 2.5),
-        ("TOPPADDING", (0,0), (-1,-1), 1.5),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 1.5),
+        ("TOPPADDING", (0,0), (-1,-1), 2.2),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 2.2),
         ("ALIGN", (1,1), (1,-1), "CENTER"),
     ]))
     story.append(st)

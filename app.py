@@ -10,7 +10,293 @@ import streamlit as st
 from engine import calculate
 from models import DesignInputs, ProjectInfo
 from optimizer import recommend_safe_design
-from reports import build_excel, build_pdf
+from reports import build_excel
+
+from io import BytesIO
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import mm
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle, PageBreak
+
+
+def build_pdf(project: ProjectInfo, inp: DesignInputs, result) -> bytes:
+    """C.V.Patil & Associates compact two-page A4 calculation report.
+
+    This local app.py implementation intentionally overrides any legacy
+    reports.build_pdf function, so replacing app.py alone updates the PDF style.
+    Engineering values come only from the current DesignResult.
+    """
+    buf = BytesIO()
+
+    BLUE = colors.HexColor("#2F67A3")
+    LIGHT_BLUE = colors.HexColor("#EAF2F9")
+    LIGHTER = colors.HexColor("#F8FAFC")
+    GRID = colors.HexColor("#C9D3DD")
+    RED = colors.HexColor("#A43B32")
+    GREEN = colors.HexColor("#3AA76D")
+    TEXT = colors.HexColor("#26323E")
+    MUTED = colors.HexColor("#66727F")
+    SUMMARY_BLUE = colors.HexColor("#2F67A3")
+    SAFE_BG = colors.HexColor("#EEF8F2")
+
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=A4,
+        leftMargin=9 * mm,
+        rightMargin=9 * mm,
+        topMargin=16.5 * mm,
+        bottomMargin=15 * mm,
+        title="COLUMN FOOTING - DESIGN CALCULATION",
+        author="C.V.Patil & Associates",
+    )
+
+    styles = getSampleStyleSheet()
+    title = ParagraphStyle(
+        "CVPTitle", parent=styles["Heading1"], fontName="Helvetica-Bold",
+        fontSize=12.5, leading=14, textColor=RED, alignment=TA_CENTER,
+        spaceBefore=0, spaceAfter=2.0 * mm,
+    )
+    sec = ParagraphStyle(
+        "CVPSec", parent=styles["Heading2"], fontName="Helvetica-Bold",
+        fontSize=9.7, leading=10.6, textColor=RED,
+        spaceBefore=1.6 * mm, spaceAfter=0.8 * mm,
+    )
+    body = ParagraphStyle(
+        "CVPBody", parent=styles["BodyText"], fontName="Helvetica",
+        fontSize=6.45, leading=7.35, textColor=TEXT, spaceAfter=0,
+    )
+    body_b = ParagraphStyle("CVPBodyB", parent=body, fontName="Helvetica-Bold")
+    note = ParagraphStyle(
+        "CVPNote", parent=body, fontSize=5.8, leading=6.6,
+        textColor=MUTED, spaceBefore=0.4 * mm, spaceAfter=0.4 * mm,
+    )
+    safe = ParagraphStyle("CVPSafe", parent=body_b, textColor=GREEN, alignment=TA_CENTER)
+    fail = ParagraphStyle("CVPFail", parent=body_b, textColor=RED, alignment=TA_CENTER)
+    center = ParagraphStyle("CVPCenter", parent=body, alignment=TA_CENTER)
+    center_b = ParagraphStyle("CVPCenterB", parent=body_b, alignment=TA_CENTER)
+
+    def P(x, sty=body):
+        return Paragraph(str(x), sty)
+
+    def fmt(v, n=3):
+        if isinstance(v, (int, float)):
+            return f"{float(v):,.{n}f}"
+        return str(v)
+
+    def S(status):
+        s = str(status).upper()
+        return Paragraph(s, safe if s in {"SAFE", "PASS"} else fail)
+
+    def basic_table(data, widths, header=True, header_fill=LIGHT_BLUE, align=None, font_size=6.3):
+        t = Table(data, colWidths=widths, repeatRows=1 if header else 0, hAlign="LEFT")
+        cmds = [
+            ("GRID", (0, 0), (-1, -1), 0.32, GRID),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
+            ("FONTSIZE", (0, 0), (-1, -1), font_size),
+            ("TEXTCOLOR", (0, 0), (-1, -1), TEXT),
+            ("LEFTPADDING", (0, 0), (-1, -1), 2.0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 2.0),
+            ("TOPPADDING", (0, 0), (-1, -1), 1.2),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 1.2),
+        ]
+        if header:
+            cmds += [
+                ("BACKGROUND", (0, 0), (-1, 0), header_fill),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("ALIGN", (0, 0), (-1, 0), "CENTER"),
+            ]
+        if align:
+            start = 1 if header else 0
+            for col, a in align.items():
+                cmds.append(("ALIGN", (col, start), (col, -1), a))
+        t.setStyle(TableStyle(cmds))
+        return t
+
+    def paired_table(rows):
+        data = []
+        for a, b, c, d in rows:
+            data.append([P(a, body_b), P(b), P(c, body_b), P(d)])
+        t = basic_table(data, [46*mm, 48*mm, 46*mm, 49*mm], header=False)
+        t.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (0, -1), LIGHT_BLUE),
+            ("BACKGROUND", (2, 0), (2, -1), LIGHT_BLUE),
+            ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+            ("FONTNAME", (2, 0), (2, -1), "Helvetica-Bold"),
+        ]))
+        return t
+
+    def header_footer(canvas, doc_):
+        canvas.saveState()
+        w, h = A4
+        y = h - 7.0 * mm
+        canvas.setFillColor(BLUE)
+        canvas.setFont("Helvetica-Bold", 7.5)
+        canvas.drawString(9 * mm, y, "C.V.Patil & Associates")
+        canvas.drawRightString(w - 9 * mm, y, "Design of COLUMN FOOTING")
+        canvas.setStrokeColor(BLUE)
+        canvas.setLineWidth(0.55)
+        canvas.line(9 * mm, y - 2.2 * mm, w - 9 * mm, y - 2.2 * mm)
+
+        fy = 8.0 * mm
+        canvas.line(9 * mm, fy + 4.0 * mm, w - 9 * mm, fy + 4.0 * mm)
+        canvas.setFont("Helvetica", 5.6)
+        canvas.setFillColor(BLUE)
+        canvas.drawString(9 * mm, fy + 1.1 * mm, f"Project: {project.project or '-'}")
+        canvas.drawString(9 * mm, fy - 1.2 * mm, f"Client: {project.client or '-'}")
+        canvas.setFont("Helvetica-Bold", 6.2)
+        canvas.drawRightString(w - 9 * mm, fy - 0.4 * mm, str(doc_.page))
+        canvas.restoreState()
+
+    cm = result.check_map()
+    v = result.values
+
+    story = [Paragraph("COLUMN FOOTING - DESIGN CALCULATION", title)]
+
+    # Top project / status block in the same visual hierarchy as the reference.
+    meta = [
+        [P("Design Standard", body_b), P("= IS 456:2000"), P("Document", body_b), P(f"= {project.document_no or '-'}")],
+        [P("Project", body_b), P(f"= {project.project or '-'}"), P("Status", body_b), S(result.overall_status)],
+        [P("Structure", body_b), P(f"= {project.structure or 'COLUMN FOOTING'}"), P("Revision", body_b), P(f"= {project.revision or 'R0'}")],
+    ]
+    mt = basic_table(meta, [30*mm, 70*mm, 30*mm, 59*mm], header=False)
+    mt.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (0, -1), LIGHT_BLUE),
+        ("BACKGROUND", (2, 0), (2, -1), LIGHT_BLUE),
+        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+        ("FONTNAME", (2, 0), (2, -1), "Helvetica-Bold"),
+    ]))
+    story.append(mt)
+
+    # 1. Design data
+    story.append(Paragraph("1. DESIGN DATA", sec))
+    story.append(paired_table([
+        ("Safe bearing capacity", f"= {fmt(inp.sbc_kn_m2)} kN/m<super>2</super>", "Design load, Pu", f"= {fmt(inp.design_load_kn)} kN"),
+        ("Mux", f"= {fmt(inp.mux_knm)} kNm", "Muy", f"= {fmt(inp.muy_knm)} kNm"),
+        ("Column width, b", f"= {fmt(inp.column_width_mm,0)} mm", "Column depth, D", f"= {fmt(inp.column_depth_mm,0)} mm"),
+        ("Footing length, Lf", f"= {fmt(inp.footing_length_mm,0)} mm", "Footing width, Bf", f"= {fmt(v['footing_width_mm'],0)} mm"),
+        ("Overall footing depth", f"= {fmt(inp.footing_depth_mm,0)} mm", "Provided clear cover", f"= {fmt(inp.cover_mm,0)} mm"),
+        ("Concrete grade", f"= M{fmt(inp.fck_mpa,0)}", "Steel grade", f"= Fe{fmt(inp.fy_mpa,0)}"),
+        ("Bottom bars - X", f"= {inp.bars_x} nos. of {fmt(inp.bar_dia_mm,0)} mm", "Bottom bars - Y", f"= {inp.bars_y} nos. of {fmt(inp.bar_dia_mm,0)} mm"),
+        ("Minimum steel method", f"= {inp.min_reinf_method}", "Ru,max", f"= {fmt(v['ru_max_mpa'],3)} N/mm<super>2</super>"),
+    ]))
+
+    # 2. Footing sizing / load / pressure: calculation column mirrors sample.
+    story.append(Paragraph("2. FOOTING SIZING & BEARING PRESSURE", sec))
+    sizing = [
+        [P("Item", body_b), P("Calculation", body_b), P("Result", body_b), P("Status", body_b)],
+        [P("Footing self weight"), P(f"Wf = 0.10 x {fmt(inp.design_load_kn)}"), P(f"= {fmt(v['self_weight_kn'])} kN", body_b), P("INFO", center_b)],
+        [P("Total design load"), P(f"Ptotal = {fmt(inp.design_load_kn)} + {fmt(v['self_weight_kn'])}"), P(f"= {fmt(v['total_load_kn'])} kN", body_b), P("INFO", center_b)],
+        [P("Required footing area"), P(f"Areq = {fmt(v['total_load_kn'])} / (1.5 x {fmt(inp.sbc_kn_m2)})"), P(f"= {fmt(v['required_area_m2'])} m<super>2</super>", body_b), S(cm['CHK-AREA'].status)],
+        [P("Provided footing area"), P(f"Af = {fmt(inp.footing_length_mm/1000,3)} x {fmt(v['footing_width_mm']/1000,3)}"), P(f"= {fmt(v['provided_area_m2'])} m<super>2</super>", body_b), S(cm['CHK-AREA'].status)],
+        [P("Factored pressure - X"), P(f"pmax / pmin = {fmt(v['pmax_x_kn_m2'])} / {fmt(v['pmin_x_kn_m2'])}"), P(f"= {fmt(v['pmax_x_kn_m2'])} / {fmt(v['pmin_x_kn_m2'])} kN/m<super>2</super>", body_b), S(cm['CHK-BEAR-X-U'].status)],
+        [P("Factored pressure - Y"), P(f"pmax / pmin = {fmt(v['pmax_y_kn_m2'])} / {fmt(v['pmin_y_kn_m2'])}"), P(f"= {fmt(v['pmax_y_kn_m2'])} / {fmt(v['pmin_y_kn_m2'])} kN/m<super>2</super>", body_b), S(cm['CHK-BEAR-Y-U'].status)],
+        [P("Working pressure - X"), P(f"pmax,w = {fmt(v['pmax_x_working_kn_m2'])}"), P(f"= {fmt(v['pmax_x_working_kn_m2'])} kN/m<super>2</super>", body_b), S(cm['CHK-BEAR-X-W'].status)],
+        [P("Working pressure - Y"), P(f"pmax,w = {fmt(v['pmax_y_working_kn_m2'])}"), P(f"= {fmt(v['pmax_y_working_kn_m2'])} kN/m<super>2</super>", body_b), S(cm['CHK-BEAR-Y-W'].status)],
+    ]
+    story.append(basic_table(sizing, [47*mm, 76*mm, 45*mm, 21*mm], header=True, align={3:"CENTER"}))
+
+    # 3. Flexure / depth
+    story.append(Paragraph("3. FLEXURE & EFFECTIVE DEPTH", sec))
+    flex = [
+        [P("Direction", body_b), P("Moment", body_b), P("Required effective depth", body_b), P("Provided effective depth", body_b), P("Status", body_b)],
+        [P("X", center_b), P(f"{fmt(v['moment_x_knm'])} kNm"), P(f"{fmt(v['required_eff_depth_x_mm'])} mm"), P(f"{fmt(v['effective_depth_x_mm'])} mm"), S("SAFE" if cm['CHK-DEPTH'].status == 'SAFE' else 'UNSAFE')],
+        [P("Y", center_b), P(f"{fmt(v['moment_y_knm'])} kNm"), P(f"{fmt(v['required_eff_depth_y_mm'])} mm"), P(f"{fmt(v['effective_depth_y_mm'])} mm"), S("SAFE" if cm['CHK-DEPTH'].status == 'SAFE' else 'UNSAFE')],
+    ]
+    story.append(basic_table(flex, [24*mm, 37*mm, 48*mm, 49*mm, 31*mm], header=True, align={0:"CENTER",4:"CENTER"}))
+
+    # 4. Punching
+    story.append(Paragraph("4. TWO-WAY (PUNCHING) SHEAR", sec))
+    punch = [
+        [P("Calculation", body_b), P("Demand", body_b), P("Capacity", body_b), P("Status", body_b)],
+        [P(f"Vu = Ptotal - soil reaction inside critical perimeter"), P(f"{fmt(v['punching_demand_kn'])} kN", body_b), P(f"{fmt(v['punching_capacity_kn'])} kN", body_b), S(cm['CHK-PUNCH'].status)],
+    ]
+    story.append(basic_table(punch, [94*mm, 36*mm, 36*mm, 23*mm], header=True, align={1:"CENTER",2:"CENTER",3:"CENTER"}))
+
+    # 5. Reinforcement
+    story.append(Paragraph("5. BOTTOM REINFORCEMENT DESIGN", sec))
+    reinf = [
+        [P("Direction", body_b), P("Flexural Ast", body_b), P("Minimum Ast", body_b), P("Required Ast", body_b), P("Provided Ast", body_b), P("Spacing", body_b), P("Status", body_b)],
+        [P("X", center_b), P(f"{fmt(v['ast_x_req_mm2'])}"), P(f"{fmt(v['ast_x_min_mm2'])}"), P(f"{fmt(v['ast_x_to_provide_mm2'])}"), P(f"{fmt(v['ast_x_provided_mm2'])}"), P(f"{fmt(v['spacing_x_mm'])} mm c/c"), S("SAFE" if cm['CHK-AST-X'].status=='SAFE' and cm['CHK-SP-X'].status=='SAFE' else 'UNSAFE')],
+        [P("Y", center_b), P(f"{fmt(v['ast_y_req_mm2'])}"), P(f"{fmt(v['ast_y_min_mm2'])}"), P(f"{fmt(v['ast_y_to_provide_mm2'])}"), P(f"{fmt(v['ast_y_provided_mm2'])}"), P(f"{fmt(v['spacing_y_mm'])} mm c/c"), S("SAFE" if cm['CHK-AST-Y'].status=='SAFE' and cm['CHK-SP-Y'].status=='SAFE' else 'UNSAFE')],
+    ]
+    story.append(basic_table(reinf, [19*mm, 28*mm, 28*mm, 29*mm, 29*mm, 35*mm, 21*mm], header=True, align={0:"CENTER",6:"CENTER"}))
+    story.append(P("Ast values in mm<super>2</super>. Minimum reinforcement method shown in Design Data.", note))
+
+    # Match the reference report's deliberate two-page composition.
+    story.append(PageBreak())
+
+    # 6. One-way shear
+    story.append(Paragraph("6. ONE-WAY SHEAR", sec))
+    one = [
+        [P("Direction", body_b), P("Demand", body_b), P("Capacity", body_b), P("pt", body_b), P("Allowable shear stress", body_b), P("Status", body_b)],
+        [P("Y", center_b), P(f"{fmt(v['one_way_y_demand_kn'])} kN"), P(f"{fmt(v['one_way_y_capacity_kn'])} kN"), P(f"{fmt(v['pt_y_percent'],3)} %"), P(f"{fmt(v['tau_c_y_mpa'],3)} N/mm<super>2</super>"), S(cm['CHK-1WAY-Y'].status)],
+        [P("X", center_b), P(f"{fmt(v['one_way_x_demand_kn'])} kN"), P(f"{fmt(v['one_way_x_capacity_kn'])} kN"), P(f"{fmt(v['pt_x_percent'],3)} %"), P(f"{fmt(v['tau_c_x_mpa'],3)} N/mm<super>2</super>"), S(cm['CHK-1WAY-X'].status)],
+    ]
+    story.append(basic_table(one, [25*mm, 34*mm, 34*mm, 26*mm, 45*mm, 25*mm], header=True, align={0:"CENTER",5:"CENTER"}))
+
+    # 7. Detailing and column bearing side-by-side like sample's paired code checks.
+    story.append(Paragraph("7. DEVELOPMENT LENGTH / COLUMN-FOOTING BEARING", sec))
+    left = basic_table([
+        [P("DEVELOPMENT LENGTH", body_b), P("", body_b)],
+        [P("Required Ld"), P(f"= {fmt(v['ld_required_mm'])} mm", body_b)],
+        [P("Available Ld"), P(f"= {fmt(v['ld_available_mm'])} mm", body_b)],
+        [P("Status"), P("= INFO", body_b)],
+    ], [44*mm, 48*mm], header=False)
+    left.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,0),LIGHT_BLUE),("FONTNAME",(0,0),(-1,0),"Helvetica-Bold")]))
+    right = basic_table([
+        [P("COLUMN-FOOTING BEARING", body_b), P("", body_b)],
+        [P("Bearing demand"), P(f"= {fmt(v['column_bearing_demand_mpa'])} N/mm<super>2</super>", body_b)],
+        [P("Bearing capacity"), P(f"= {fmt(v['column_bearing_capacity_mpa'])} N/mm<super>2</super>", body_b)],
+        [P("Status"), S(cm['CHK-COL-BEAR'].status)],
+    ], [44*mm, 48*mm], header=False)
+    right.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,0),LIGHT_BLUE),("FONTNAME",(0,0),(-1,0),"Helvetica-Bold")]))
+    story.append(Table([[left, right]], colWidths=[94*mm, 94*mm], hAlign="LEFT", style=[("VALIGN",(0,0),(-1,-1),"TOP"),("LEFTPADDING",(0,0),(-1,-1),0),("RIGHTPADDING",(0,0),(-1,-1),2)]))
+
+    # 8. Mandatory checks - compact, same light table styling rather than old dark header style.
+    story.append(Paragraph("8. MANDATORY DESIGN CHECKS", sec))
+    checks = [[P("Check", body_b), P("Demand", body_b), P("Capacity / limit", body_b), P("Status", body_b)]]
+    for c in result.checks:
+        d = "-" if c.demand is None else fmt(c.demand)
+        cap = "-" if c.capacity is None else fmt(c.capacity)
+        unit = c.unit or ""
+        checks.append([P(c.name), P(f"{d} {unit}"), P(f"{cap} {unit}"), S(c.status)])
+    story.append(basic_table(checks, [78*mm, 43*mm, 43*mm, 25*mm], header=True, align={3:"CENTER"}, font_size=5.95))
+
+    # 9. Final summary - dark blue band exactly like the reference.
+    story.append(Paragraph("9. FINAL DESIGN SUMMARY", sec))
+    summary = [
+        [P("FINAL DESIGN SUMMARY", ParagraphStyle("sumh", parent=body_b, textColor=colors.white)), ""],
+        [P("Overall Status", body_b), S(result.overall_status)],
+        [P("Footing Size", body_b), P(f"{fmt(inp.footing_length_mm,0)} x {fmt(v['footing_width_mm'],0)} x {fmt(inp.footing_depth_mm,0)} mm", center_b)],
+        [P("Bottom Reinforcement - X", body_b), P(f"{inp.bars_x} nos. of {fmt(inp.bar_dia_mm,0)} mm bars @ {fmt(v['spacing_x_mm'],0)} mm c/c", center_b)],
+        [P("Bottom Reinforcement - Y", body_b), P(f"{inp.bars_y} nos. of {fmt(inp.bar_dia_mm,0)} mm bars @ {fmt(v['spacing_y_mm'],0)} mm c/c", center_b)],
+        [P("Minimum Steel Method", body_b), P(inp.min_reinf_method, center_b)],
+    ]
+    st = Table(summary, colWidths=[94.5*mm, 94.5*mm], hAlign="LEFT")
+    st.setStyle(TableStyle([
+        ("SPAN", (0,0), (1,0)),
+        ("BACKGROUND", (0,0), (1,0), SUMMARY_BLUE),
+        ("TEXTCOLOR", (0,0), (1,0), colors.white),
+        ("FONTNAME", (0,0), (1,0), "Helvetica-Bold"),
+        ("BACKGROUND", (0,1), (0,-1), LIGHT_BLUE),
+        ("BACKGROUND", (1,1), (1,1), SAFE_BG if result.overall_status == "SAFE" else colors.HexColor("#FDECEC")),
+        ("GRID", (0,0), (-1,-1), 0.4, GRID),
+        ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+        ("LEFTPADDING", (0,0), (-1,-1), 2.5),
+        ("RIGHTPADDING", (0,0), (-1,-1), 2.5),
+        ("TOPPADDING", (0,0), (-1,-1), 1.5),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 1.5),
+        ("ALIGN", (1,1), (1,-1), "CENTER"),
+    ]))
+    story.append(st)
+    story.append(P("SAFE means safe for all mandatory checks implemented in this application and within the visible FOOTING-sheet scope.", note))
+
+    doc.build(story, onFirstPage=header_footer, onLaterPages=header_footer)
+    return buf.getvalue()
+
 
 st.set_page_config(
     page_title="COLUMN FOOTING Design",
